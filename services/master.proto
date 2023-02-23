@@ -1,0 +1,32 @@
+syntax = "proto3";
+package services;
+
+import "google/protobuf/empty.proto";
+
+option go_package = "github.com/noobyscoob/map-reduce/services";
+
+message IcInput {
+    int32 nMappers = 1;
+    int32 nReducers = 2;
+}
+
+message Log {
+    string msg = 1;
+}
+
+message FileInput {
+    string name = 1;
+    bytes data = 2;
+}
+
+message RunMapRdInput {
+    string fn = 1;
+    FileInput file = 2;
+}
+
+message Empty {}
+
+service MasterService {
+    rpc InitCluster(IcInput) returns (Log) {}
+    rpc RunMapRd(stream RunMapRdInput) returns (Log) {}
+}

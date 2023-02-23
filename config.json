@@ -1,0 +1,17 @@
+{
+    "client": {
+        "nMappers": 3,
+        "nReducers": 2
+    },
+    "master": {
+        "port": "8081"
+    },
+    "mappers": {
+        "maxAllowed": 5,
+        "ports": ["9091", "9092", "9093", "9094", "9095"]
+    },
+    "reducers": {
+        "maxAllowed": 3,
+        "ports": ["9191", "9192"]
+    }
+}

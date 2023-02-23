@@ -1,0 +1,16 @@
+syntax = "proto3";
+package services;
+
+import "google/protobuf/empty.proto";
+import "services/mapper.proto";
+
+option go_package = "github.com/noobyscoob/map-reduce/services";
+
+message IntermediateData {
+    string fileName = 1;
+    KvPairs data = 2;
+}
+
+service ReducerService {
+    rpc SendIntermediateData(IntermediateData) returns (google.protobuf.Empty) {}
+}
