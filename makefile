@@ -1,9 +1,10 @@
 BINARY=bin/server
 
 build:
-	chmod +x init.sh & source ./init.sh
-	GOARCH=amd64 GOOS=darwin go1.20.1 build -o ${BINARY}_darwin server.go
-	GOARCH=amd64 GOOS=linux go1.20.1 build -o ${BINARY}_linux server.go
+	chmod +x init.sh
+	./init.sh
+	GOARCH=amd64 GOOS=darwin go1.20.1 build -o ${BINARY}_darwin main.go
+	GOARCH=amd64 GOOS=linux go1.20.1 build -o ${BINARY}_linux main.go
 
 run: build
 	echo "Running base example word count"
@@ -23,6 +24,4 @@ testii:
 	killall main
 
 clean:
-	go clean
 	rm bin/*
-	rm rf ./mappers ./master ./reducers ./output
