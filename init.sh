@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# for luddy servers
 if which go1.20.1 > /dev/null; then
     echo go1.20.1 exists
 else
