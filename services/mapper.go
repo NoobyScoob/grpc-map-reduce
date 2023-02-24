@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"hash/fnv"
+	"io"
 	"log"
 	"os"
 	"sort"
@@ -33,8 +34,15 @@ var mapperRootPath string
 
 func (ms *MapperServer) RunMap(ctx context.Context, input *RunMapInput) (*emptypb.Empty, error) {
 	log.Printf("Starting map function on the file: %s\n", input.FileName)
-	kvPairs := wcMap(input.FileName, string(input.FileData))
-	
+	var kvPairs *KvPairs
+	// runs map function based on input
+	log.Printf("Function: %s\n", input.Fn)
+	if input.Fn == "wc" {
+		kvPairs = wcMap(input.FileName, string(input.FileData))
+	} else {
+		kvPairs = invIndexMap(input.FileName, string(input.FileData))
+	}
+
 	log.Printf("Sorting intermediate key value pairs!\n")
 	// sort kvPairs
 	sort.Sort(KvSorter(kvPairs.Data))
@@ -146,11 +154,10 @@ func (ms *MapperServer) InitReduce(ctx context.Context, input *InitReduceInput) 
 
 func InitMapperFileSystem(port string) (error) {
 	mapperRootPath = fmt.Sprintf("./mappers/m%s", port)
-	if _, err := os.Stat(mapperRootPath); os.IsNotExist(err) {
-		err := os.MkdirAll(mapperRootPath, 0755)
-		if err != nil {
-			return err
-		}
+	// os.RemoveAll(mapperRootPath)
+	err := os.MkdirAll(mapperRootPath, 0755)
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -163,7 +170,8 @@ func InitMapperLogs() error {
 	}
 	log.Printf("-------------------------------------------------------------------------\n")
 	// initialize logging
-	log.SetOutput(logFile)
+	multi := io.MultiWriter(logFile, os.Stdout)
+	log.SetOutput(multi)
 	return nil
 }
 
@@ -175,6 +183,20 @@ func wcMap(_key, value string) *KvPairs {
 	kvPairs := &KvPairs{}
 	for _, word := range words {
 		kvPairs.Data = append(kvPairs.Data, &KeyValue{Key: word, Value: "1"})
+	}
+
+	return kvPairs
+}
+
+func invIndexMap(key, value string) *KvPairs {
+	// spliting into words
+	// key is the input file name
+	words := strings.FieldsFunc(value, func(r rune) bool { return !unicode.IsLetter(r) })
+	// emit intermediate key value pairs
+	kvPairs := &KvPairs{}
+	// generates word: fileName
+	for _, word := range words {
+		kvPairs.Data = append(kvPairs.Data, &KeyValue{Key: word, Value: key})
 	}
 
 	return kvPairs

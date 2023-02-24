@@ -26,6 +26,7 @@ func main() {
 	} else if os.Args[1] == "master" {
 		startRpcServer(config.Master.Port)
 	} else {
+		// os.Args[2] contains worker type
 		startRpcServer(os.Args[2])
 	}
 }
@@ -37,7 +38,16 @@ func main() {
 
 func startRpcClient() {
 	cmd := exec.Command("go", "run", "main.go", "master")
+	// just for this local map reduce
+	out, _ := cmd.StdoutPipe()
+	defer out.Close()
 
+	// clean file system
+	os.RemoveAll("./master")
+	os.RemoveAll("./mappers")
+	os.RemoveAll("./reducers")
+	os.RemoveAll("./output")
+	
 	err := cmd.Start()
 	if err != nil {
 		log.Fatal(err)
@@ -46,12 +56,8 @@ func startRpcClient() {
 	log.Print(cmd.Process.Pid)
 	log.Print(config.Master.Port)
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-
 	// log.Printf("Starting a master process on port: %s!\nProcess Id: %d", config.Master.Port, proc.Pid)
- 
+
 	unsecureOpt := grpc.WithTransportCredentials(insecure.NewCredentials())
 	blockingOpt := grpc.WithBlock()
 
@@ -90,8 +96,8 @@ func startRpcClient() {
 		log.Fatal("Read Dir", err)
 	}
 
-	log.Printf("Running map reduce...\n")
 	log.Printf("Check log files in ./master, ./mappers and ./reducers folders\n")
+	log.Printf("Running map reduce...\n")
 
 	stream, err := mc.RunMapRd(context.Background())
 	if err != nil {
@@ -99,6 +105,7 @@ func startRpcClient() {
 	}
 
 	for _, file := range inputFiles {
+		log.Printf(file.Name())
 		bytes, err := os.ReadFile(inputFilesPath + file.Name())
 		if err != nil {
 			log.Fatal("Read file err ", err)

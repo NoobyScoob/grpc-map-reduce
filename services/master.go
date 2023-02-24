@@ -14,7 +14,6 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 var masterRootPath string
@@ -44,13 +43,13 @@ type MasterServer struct {
 	UnimplementedMasterServiceServer
 }
 
-func (s *MasterServer) InitCluster(ctx context.Context, input *IcInput) (*emptypb.Empty, error) {
+func (s *MasterServer) InitCluster(ctx context.Context, input *IcInput) (*Log, error) {
 	// init mappers and reducers
 	for i := 0; i < int(input.NMappers); i++ {
 		cmd := exec.Command("go", "run", "main.go", "mapper", MasterConfig.Mappers.Ports[i])
 		err := cmd.Start()
 		if err != nil {
-			return &emptypb.Empty{}, err
+			return &Log{}, err
 		}
 	}
 
@@ -58,20 +57,22 @@ func (s *MasterServer) InitCluster(ctx context.Context, input *IcInput) (*emptyp
 		cmd := exec.Command("go", "run", "main.go", "reducer", MasterConfig.Reducers.Ports[i])
 		err := cmd.Start()
 		if err != nil {
-			return &emptypb.Empty{}, err
+			return &Log{}, err
 		}
 	}
 	
-	return &emptypb.Empty{}, nil
+	return &Log{}, nil
 }
 
 func (s *MasterServer) RunMapRd(stream MasterService_RunMapRdServer) (error) {
 	// listen to the stream
+	log.Printf("Receiving ")
 	fn := ""
 	for {
 		input, err := stream.Recv()
 		// read function type
 		if len(fn) == 0 {
+			log.Printf("Input function: %s\n", input.Fn)
 			fn = input.Fn
 		}
 		if err == io.EOF {
@@ -93,7 +94,7 @@ func (s *MasterServer) RunMapRd(stream MasterService_RunMapRdServer) (error) {
 	files, err := os.ReadDir(masterRootPath)
 	if err != nil {
 		log.Printf("Error reading root: %v\n", err)
-		return stream.SendAndClose(&emptypb.Empty{})
+		return stream.SendAndClose(&Log{})
 	}
 
 	var wg sync.WaitGroup
@@ -111,11 +112,11 @@ func (s *MasterServer) RunMapRd(stream MasterService_RunMapRdServer) (error) {
 	for i, file := range inputFiles {
 		// at max we can send files to 1 mapper at a time
 		mapperIndex := i % MasterConfig.Client.NMappers
-		log.Printf("Sending task %d to mapper", i)
 		wg.Add(1)
-		go func(i int) {
+		go func(i int, file fs.DirEntry) {
 			// create a connection
 			mapperPort := MasterConfig.Mappers.Ports[mapperIndex]
+			log.Printf("Sending file %s task %d to mapper %s", file.Name(), i, mapperPort)
 			conn, err := grpc.Dial(fmt.Sprintf("localhost:%s", mapperPort), unsecureOpt, blockingOpt)
 			if err != nil {
 				// mapper connection failed
@@ -149,7 +150,7 @@ func (s *MasterServer) RunMapRd(stream MasterService_RunMapRdServer) (error) {
 				// map job failed, handle fault
 				log.Print("Error: ", err)
 			}
-		}(i)
+		}(i, file)
 
 		if mapperIndex + 1 == MasterConfig.Client.NMappers {
 			wg.Wait()
@@ -169,6 +170,7 @@ func (s *MasterServer) RunMapRd(stream MasterService_RunMapRdServer) (error) {
 		go func(i int) {
 			defer wg.Done()
 			mapperPort := MasterConfig.Mappers.Ports[i]
+			log.Printf("Dailing mapper at port %s\n", mapperPort)
 			conn, err := grpc.Dial(fmt.Sprintf("localhost:%s", mapperPort), unsecureOpt, blockingOpt)
 			if err != nil {
 				log.Printf("Error: %v\n", err)
@@ -190,7 +192,48 @@ func (s *MasterServer) RunMapRd(stream MasterService_RunMapRdServer) (error) {
 
 	wg.Wait()
 
-	return stream.SendAndClose(&emptypb.Empty{})
+	log.Printf("Signaling reducers to start reduce tasks!\n")
+	
+	// cleaning output folder
+	basePath := "./output"
+	os.RemoveAll(basePath)
+	os.MkdirAll(basePath, 0755)
+
+	for i := 0; i < MasterConfig.Client.NReducers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			reducerPort := MasterConfig.Reducers.Ports[i]
+			conn, err := grpc.Dial(fmt.Sprintf("localhost:%s", reducerPort), unsecureOpt, blockingOpt)
+			if err != nil {
+				log.Printf("Error: %v\n", err)
+				return
+			}
+			defer conn.Close()
+
+			log.Printf("Signaling reducer at port: %s", MasterConfig.Reducers.Ports[i])
+			rc := NewReducerServiceClient(conn)
+			ctx, cancel := context.WithTimeout(context.Background(), 10 * time.Second)
+			defer cancel()
+
+			file, err := rc.RunReduce(ctx, &RunReduceInput{Fn: fn})
+			if err != nil {
+				log.Printf("Error starting reduce on reducer port: %s\n", MasterConfig.Reducers.Ports[i])
+				log.Printf("Error: %v\n", err)
+			}
+			
+			err = os.WriteFile(basePath + "/" + file.Name, file.Data, 0666)
+			if err != nil {
+				log.Printf("Error writing the returned output file: %s\n", file.Name)
+				log.Printf("Error: %v\n", err)
+			}
+		}(i)
+	}
+
+	// all reducers finished their task
+	wg.Wait()
+
+	return stream.SendAndClose(&Log{})
 }
 
 func InitMasterLogs() error {
@@ -201,17 +244,17 @@ func InitMasterLogs() error {
 	}
 	log.Printf("-------------------------------------------------------------------------\n")
 	// initialize logging
-	log.SetOutput(logFile)
+	multi := io.MultiWriter(logFile, os.Stdout)
+	log.SetOutput(multi)
 	return nil
 }
 
 func InitMasterFileSystem() (error) {
 	masterRootPath = "./master"
-	if _, err := os.Stat(masterRootPath); os.IsNotExist(err) {
-		err := os.MkdirAll(masterRootPath, 0755)
-		if err != nil {
-			return err
-		}
+	// os.RemoveAll(masterRootPath)
+	err := os.MkdirAll(masterRootPath, 0755)
+	if err != nil {
+		return err
 	}
 	return nil
 }

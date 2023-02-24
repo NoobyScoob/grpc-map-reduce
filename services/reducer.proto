@@ -11,6 +11,16 @@ message IntermediateData {
     KvPairs data = 2;
 }
 
+message RunReduceInput {
+    string fn = 1;
+}
+
+message FileOutput {
+    string name = 1;
+    bytes data = 2;
+}
+
 service ReducerService {
     rpc SendIntermediateData(IntermediateData) returns (google.protobuf.Empty) {}
+    rpc RunReduce(RunReduceInput) returns (FileOutput) {}
 }
