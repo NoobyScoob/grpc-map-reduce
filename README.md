@@ -6,7 +6,7 @@ This assignment is an implementation of MapReduce framework in Golang using gRpc
 
 ## 1. Introduction
 
-In this implementation of MapReduce in, master spawns the map reduce processes on one a single machine as OS processes. They communicate using the _gRpc_ implementation of remote procedure calls (which underlyingly use Http 2.0). Current design tests the implementation on two operations, _wordcount_ and _inverted index._ This also uses better serializing mechanism, with _protocol buffers_, achieves parallelism of connections and concurrency in processing of map and reduce tasks with goroutines (also called threads).
+In this implementation of MapReduce, the master spawns the map reduce processes on a single machine as OS processes. They communicate using the _gRpc_ implementation of remote procedure calls (which underlyingly use Http 2.0). Current design tests the implementation on two operations, _wordcount_ and _inverted index._ This also uses better serializing mechanism, with _protocol buffers_, achieves parallelism of connections and concurrency in processing of map and reduce tasks with goroutines (also called threads).
 
 ## 2. Design
 
@@ -16,7 +16,7 @@ In this implementation of MapReduce in, master spawns the map reduce processes o
 
 **File** : main.go
 
-Client is a user program that initiates the map reduce process, i.e., starts the master with user specific configurations. In this implementation immediately after starting the client process with the required input, it creates a separate master process. Client listens on the connection until the jobs are processed and gets notified about the output.
+Client is a user program that initiates the map reduce process, i.e., starts the master with user specific configuration. In this implementation, immediately after starting the client process with the required input, it creates a separate master process. Client listens on the connection until the jobs are processed and gets notified about the output.
 
 **Input:** input files, type of operation, ports configuration, number of mappers and reducers.
 
